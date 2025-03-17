@@ -133,6 +133,31 @@ def upload_image():
         return jsonify({"message": "Upload successful", "image": new_image.to_dict()}), 200
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    
+# ✅ SIGNUP API
+@app.route("/signup", methods=["POST"])
+def signup():
+    data = request.json
+    username = data.get("username")
+    name = data.get("name")
+    password = data.get("password")
+
+    if not username or not name or not password:
+        return jsonify({"error": "Missing fields"}), 400
+
+    existing_user = User.query.filter_by(username=username).first()
+    if existing_user:
+        return jsonify({"error": "Username already exists"}), 409
+
+    hashed_password = bcrypt.generate_password_hash(password).decode("utf-8")
+    new_user = User(username=username, name=name, password=hashed_password)
+    db.session.add(new_user)
+    db.session.commit()
+
+    token = generate_token(new_user.username)
+
+    return jsonify({"message": "User created successfully", "token": token, "user": new_user.to_dict()}), 201
+
 
 # ✅ GET IMAGES UPLOADED BY THE AUTHENTICATED USER
 @app.route("/images", methods=["GET"])
