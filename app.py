@@ -13,13 +13,15 @@ app = Flask(__name__)
 CORS(app, resources={r"/*": {"origins": "*"}}, supports_credentials=True, allow_headers=["Content-Type", "Authorization"], methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"])
 bcrypt = Bcrypt(app)
 
-# ✅ AWS S3 Configuration (Set in Environment Variables)
+
+
+#  AWS S3 Configuration 
 AWS_REGION = os.getenv("AWS_REGION", "ap-south-1")
 S3_BUCKET = os.getenv("AWS_S3_BUCKET", "naman-image-app")
 AWS_ACCESS_KEY = os.getenv("AWS_ACCESS_KEY")
 AWS_SECRET_KEY = os.getenv("AWS_SECRET_KEY")
 
-# ✅ AWS S3 Client Setup
+# AWS S3 Client Setup
 s3_client = boto3.client(
     "s3",
     region_name=AWS_REGION,
@@ -28,14 +30,14 @@ s3_client = boto3.client(
     config=Config(signature_version="s3v4")
 )
 
-# ✅ PostgreSQL Configuration
+# PostgreSQL Configuration
 app.config['SQLALCHEMY_DATABASE_URI'] = 'postgresql://postgres:root@localhost:5432/imageDB'
 app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 app.config["SECRET_KEY"] = os.getenv("SECRET_KEY", "supersecretkey")
 
 db = SQLAlchemy(app)
 
-# ✅ User Model
+# User Model
 class User(db.Model):
     __tablename__ = "users"
     id = db.Column(db.Integer, primary_key=True)
@@ -46,7 +48,7 @@ class User(db.Model):
     def to_dict(self):
         return {"id": self.id, "username": self.username, "name": self.name}
 
-# ✅ Image Model
+# Image Model
 class Image(db.Model):
     __tablename__ = "images"
     id = db.Column(db.Integer, primary_key=True)
@@ -60,7 +62,7 @@ class Image(db.Model):
     def to_dict(self):
         return {"id": self.id, "username": self.username, "file_key": self.file_key, "image_url": self.image_url, "timestamp": self.timestamp}
 
-# ✅ Generate JWT Token
+#  Generate JWT Token
 def generate_token(username):
     payload = {
         "username": username,
@@ -68,7 +70,7 @@ def generate_token(username):
     }
     return jwt.encode(payload, app.config["SECRET_KEY"], algorithm="HS256")
 
-# ✅ Middleware to extract username from JWT
+# Middleware to extract username from JWT
 def get_username_from_token():
     token = request.headers.get("Authorization")
     if not token:
@@ -85,12 +87,12 @@ def get_username_from_token():
 def home():
     return jsonify({"message": "Welcome to the Flask API"}), 200
 
-# ✅ Handle Preflight Requests
+#  Handle Preflight Requests
 @app.route("/login", methods=["OPTIONS"])
 def preflight_login():
     return '', 204
 
-# ✅ LOGIN API
+# LOGIN API
 @app.route("/login", methods=["POST"])
 def login():
     data = request.json
@@ -104,7 +106,7 @@ def login():
 
     return jsonify({"error": "Invalid credentials"}), 401
 
-# ✅ UPLOAD IMAGE TO S3 & SAVE METADATA TO DATABASE
+# UPLOAD IMAGE TO S3 & SAVE METADATA TO DATABASE
 @app.route("/upload", methods=["POST"])
 def upload_image():
     username = get_username_from_token()
@@ -134,7 +136,7 @@ def upload_image():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     
-# ✅ SIGNUP API
+# SIGNUP API
 @app.route("/signup", methods=["POST"])
 def signup():
     data = request.json
@@ -159,7 +161,7 @@ def signup():
     return jsonify({"message": "User created successfully", "token": token, "user": new_user.to_dict()}), 201
 
 
-# ✅ GET IMAGES UPLOADED BY THE AUTHENTICATED USER
+# GET IMAGES UPLOADED BY THE AUTHENTICATED USER
 @app.route("/images", methods=["GET"])
 def get_user_images():
     username = get_username_from_token()
@@ -168,6 +170,41 @@ def get_user_images():
 
     images = Image.query.filter_by(username=username).all()
     return jsonify({"images": [image.to_dict() for image in images]}), 200
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+from openai import OpenAI
+
+client = OpenAI(api_key=OPENAI_API_KEY)
+client = OpenAI()
+
+@app.route("/analyze", methods=["POST"])
+def analyze_image():
+    data = request.json
+    image_url = data.get("image_url")
+    
+    if not image_url:
+        return jsonify({"error": "Missing image URL"}), 400
+    
+    try:
+        response = client.chat.completions.create(
+            model="gpt-3.5-turbo",  
+            messages=[{
+                "role": "user",
+                "content": [
+                    {"type": "text", "text": "Analyze this image and describe its contents."},
+                    {"type": "image_url", "image_url": {"url": image_url}}
+                ],
+            }],
+            max_tokens=300 
+        )
+        
+        analysis_result = response.choices[0].message.content
+        return jsonify({"analysis": analysis_result}), 200
+    except Exception as e:
+        print(e)
+        return jsonify({"error": str(e)}), 500
+
 
 if __name__ == "__main__":
     with app.app_context():
